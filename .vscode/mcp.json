@@ -1,0 +1,23 @@
+{
+  "servers": {
+    "cc-workflow-studio": {
+      "type": "http",
+      "url": "http://127.0.0.1:57433/mcp"
+    },
+    "agentes-24h-local-orchestrator": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "C:/Users/pc/Downloads/drive-download-20260322T024009Z-1-001/agentes-24h-final/docker-compose.dev.yml",
+        "run",
+        "--rm",
+        "-i",
+        "mcp-server"
+      ],
+      "env": {},
+      "type": "stdio",
+      "source": "antigravity"
+    }
+  }
+}
