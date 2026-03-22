@@ -5,10 +5,10 @@ import sys
 repo_dir = r"repos\white-label mvp"
 max_loops = 5
 
-def run_cmd(cmd_list: list[str], **kwargs):
+def run_cmd(cmd_list: list[str], cwd: str | None = None, capture_output: bool = False, text: bool = False):
     if os.name == 'nt' and cmd_list[0] == "npx":
-        return subprocess.run(["npx.cmd"] + cmd_list[1:], **kwargs)  # type: ignore
-    return subprocess.run(cmd_list, **kwargs)  # type: ignore
+        return subprocess.run(["npx.cmd"] + cmd_list[1:], cwd=cwd, capture_output=capture_output, text=text)  # type: ignore
+    return subprocess.run(cmd_list, cwd=cwd, capture_output=capture_output, text=text)  # type: ignore
 
 print("=====================================================")
 print("🤖 Cérebro Mestre: Auto-Aprimoramento do White-Label 🤖")
