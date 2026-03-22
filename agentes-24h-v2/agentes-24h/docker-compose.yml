@@ -1,0 +1,290 @@
+# =============================================================================
+# agentes-24h – Docker Compose
+# Sistema de agentes autônomos com múltiplos provedores de IA
+# Limite total de RAM: 4 GB distribuídos entre todos os serviços
+# =============================================================================
+
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# Volumes persistentes
+# ---------------------------------------------------------------------------
+volumes:
+  redis_data:
+  ollama_data:
+  data_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/logs
+  data_repos:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/repos
+
+# ---------------------------------------------------------------------------
+# Rede interna isolada
+# ---------------------------------------------------------------------------
+networks:
+  agents_net:
+    driver: bridge
+
+# ---------------------------------------------------------------------------
+# Secrets (arquivos em ./secrets/, permissão 600 no host)
+# ---------------------------------------------------------------------------
+secrets:
+  openrouter_key:
+    file: ./secrets/openrouter_key.txt
+  google_oauth_token:
+    file: ./secrets/google_oauth_token.json
+  firecrawl_key:
+    file: ./secrets/firecrawl_key.txt
+  github_token:
+    file: ./secrets/github_token.txt
+
+# =============================================================================
+# Serviços
+# =============================================================================
+services:
+
+  # ---------------------------------------------------------------------------
+  # Redis – broker Celery + cache geral
+  # RAM: 256 MB
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: agents_redis
+    restart: always
+    command: redis-server --maxmemory 200mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - agents_net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Key Manager – expõe chaves de forma segura para os workers via HTTP local
+  # RAM: 128 MB
+  # ---------------------------------------------------------------------------
+  key-manager:
+    build:
+      context: ./key-manager
+      dockerfile: Dockerfile
+    container_name: agents_key_manager
+    restart: always
+    secrets:
+      - openrouter_key
+      - google_oauth_token
+      - firecrawl_key
+      - github_token
+    environment:
+      - KM_HOST=0.0.0.0
+      - KM_PORT=8100
+      # Token compartilhado entre key-manager e workers (definido no .env)
+      - KM_AUTH_TOKEN=${KM_AUTH_TOKEN}
+    networks:
+      - agents_net
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Scheduler – Celery Beat (dispara tarefas recorrentes)
+  # RAM: 256 MB
+  # ---------------------------------------------------------------------------
+  scheduler:
+    build:
+      context: ./scheduler
+      dockerfile: Dockerfile
+    container_name: agents_scheduler
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      key-manager:
+        condition: service_healthy
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - KM_URL=http://key-manager:8100
+      - KM_AUTH_TOKEN=${KM_AUTH_TOKEN}
+      - GIT_REPO_PATH=/data/repos
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-agents@localhost}
+      - GIT_USER_NAME=${GIT_USER_NAME:-Agente Autônomo}
+    volumes:
+      - data_repos:/data/repos
+      - data_logs:/data/logs
+    networks:
+      - agents_net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # ---------------------------------------------------------------------------
+  # Workers – executores das tarefas Celery (2 réplicas)
+  # RAM: 512 MB cada → 1 GB total
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      key-manager:
+        condition: service_healthy
+      ollama:
+        condition: service_started   # ollama não tem healthcheck built-in
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - KM_URL=http://key-manager:8100
+      - KM_AUTH_TOKEN=${KM_AUTH_TOKEN}
+      - OLLAMA_URL=http://ollama:11434
+      - GIT_REPO_PATH=/data/repos
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-agents@localhost}
+      - GIT_USER_NAME=${GIT_USER_NAME:-Agente Autônomo}
+      # Modelo padrão do Ollama para tarefas leves
+      - OLLAMA_DEFAULT_MODEL=${OLLAMA_DEFAULT_MODEL:-phi3:mini}
+    volumes:
+      - data_repos:/data/repos
+      - data_logs:/data/logs
+    networks:
+      - agents_net
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  # Ollama – modelos locais (fallback / tarefas simples)
+  # RAM: 1.5 GB (suficiente para phi3:mini ou tinyllama)
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agents_ollama
+    restart: always
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - agents_net
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+        reservations:
+          memory: 512M
+    # Pull do modelo padrão na inicialização (roda em background)
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        sleep 10
+        ollama pull ${OLLAMA_DEFAULT_MODEL:-phi3:mini} || true
+        wait
+
+  # ---------------------------------------------------------------------------
+  # Flower – monitoramento do Celery (UI web na porta 5555)
+  # RAM: 128 MB
+  # ---------------------------------------------------------------------------
+  flower:
+    image: mher/flower:2.0
+    container_name: agents_flower
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - FLOWER_PORT=5555
+      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-changeme}
+    ports:
+      - "5555:5555"
+    networks:
+      - agents_net
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+
+  # ---------------------------------------------------------------------------
+  # MCP Server – expõe as skills como ferramentas MCP (stdio)
+  # Clientes: Claude Desktop, OpenCode, Continue.dev, etc.
+  # RAM: 128 MB
+  # ---------------------------------------------------------------------------
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: agents_mcp
+    restart: always
+    depends_on:
+      key-manager:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - KM_URL=http://key-manager:8100
+      - KM_AUTH_TOKEN=${KM_AUTH_TOKEN}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - OLLAMA_URL=http://ollama:11434
+      - GIT_REPO_PATH=/data/repos
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - data_repos:/data/repos
+      - data_logs:/data/logs
+    networks:
+      - agents_net
+    # MCP usa stdio – para conectar via Docker, use:
+    # docker compose run --rm -i mcp-server
+    stdin_open: true
+    tty: false
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+
+# =============================================================================
+# Resumo de RAM:
+#   redis        256 MB
+#   key-manager  128 MB
+#   scheduler    256 MB
+#   worker x2   1024 MB
+#   ollama      1536 MB
+#   flower       128 MB
+#   mcp-server   128 MB
+#   ─────────────────────
+#   TOTAL       ~3.5 GB  (margem de ~500 MB para o SO)
+# =============================================================================

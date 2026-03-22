@@ -1,0 +1,21 @@
+# agentes-24h-final .gitignore
+.env
+secrets/*.txt
+secrets/*.json
+!secrets/*.example
+data/logs/*
+data/repos/*
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+*.so
+.DS_Store
+Thumbs.db
+*.log
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/

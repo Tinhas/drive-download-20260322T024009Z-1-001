@@ -1,0 +1,9 @@
+# Worker dependencies
+celery==5.3.6
+redis==5.0.3
+httpx==0.27.0
+# Para parsing de respostas JSON da IA
+# (stdlib json é suficiente, mas deixamos aqui caso precise de extras)
+
+# Opcional: se quiser suporte a YAML em configs
+# pyyaml==6.0.1

@@ -1,0 +1,31 @@
+{
+  "_comment": "Cole este bloco dentro do seu claude_desktop_config.json ou opencode config.",
+  "_doc": "https://modelcontextprotocol.io/docs/concepts/configuration",
+
+  "mcpServers": {
+    "agentes-24h": {
+      "_comment": "Opção 1: rodar direto via Docker (recomendado se o sistema já está rodando)",
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f", "/CAMINHO/PARA/agentes-24h/docker-compose.yml",
+        "run", "--rm", "-i",
+        "mcp-server"
+      ],
+      "env": {}
+    },
+
+    "agentes-24h-local": {
+      "_comment": "Opção 2: rodar direto com Python (para desenvolvimento)",
+      "command": "python",
+      "args": ["/CAMINHO/PARA/agentes-24h/mcp-server/server.py"],
+      "env": {
+        "KM_URL": "http://localhost:8100",
+        "KM_AUTH_TOKEN": "SEU_TOKEN_AQUI",
+        "OLLAMA_URL": "http://localhost:11434",
+        "GIT_REPO_PATH": "/CAMINHO/PARA/agentes-24h/data/repos",
+        "GEMINI_API_KEY": "SUA_GEMINI_KEY_AQUI"
+      }
+    }
+  }
+}
