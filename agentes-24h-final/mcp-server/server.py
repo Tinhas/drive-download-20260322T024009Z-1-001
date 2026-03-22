@@ -41,9 +41,12 @@ try:
     import tools_reverse_eng as tre
     import tools_llm_connectors as tllm
     import tools_delegation as tdel
+    import tools_repo_mgmt as trm
     _EXTRA_TOOLS = True
-except ImportError:
+except ImportError as e:
     _EXTRA_TOOLS = False
+    import sys
+    print(f"[mcp-server] Tools extras não disponíveis: {e}", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Logging para stderr (stdout Ã© reservado para o protocolo MCP)
@@ -214,7 +217,7 @@ def tool_run_task(task_name: str, kwargs: dict | None = None) -> str:
     try:
         from celery import Celery
         app = Celery(broker=CELERY_BROKER)
-        result = app.send_task(f"tasks.{task_name}", kwargs=kwargs or {})
+        result = app.send_task(f"tasks.{task_name}", kwargs=kwargs or {}, queue="default")
         return f"Tarefa '{task_name}' enviada. ID: {result.id}"
     except Exception as e:
         return f"Erro ao disparar tarefa: {e}"
@@ -953,6 +956,81 @@ if _EXTRA_TOOLS:
         },
     }
     TOOLS.update(_NEURO)
+
+    # ── REPO MANAGEMENT ─────────────────────────────────────────────────────
+    if "trm" in dir():
+        _REPO: dict[str, dict] = {
+            "repo_list": {
+                "fn": trm.tool_list_repos,
+                "description": "Lista todos os repositórios Git disponíveis em data/repos/ com status.",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            "repo_summary": {
+                "fn": trm.tool_repo_summary,
+                "description": "Retorna resumo estruturado de um repositório (branches, commits, remotes, linguagens).",
+                "inputSchema": {"type": "object", "properties": {
+                    "repo_name": {"type": "string", "description": "Nome do repositório em data/repos/"},
+                }, "required": ["repo_name"]},
+            },
+            "repo_branches": {
+                "fn": trm.tool_repo_branches,
+                "description": "Lista todas as branches de um repositório.",
+                "inputSchema": {"type": "object", "properties": {
+                    "repo_name": {"type": "string"},
+                }, "required": ["repo_name"]},
+            },
+            "repo_diff": {
+                "fn": trm.tool_repo_diff,
+                "description": "Mostra diferenças entre branches ou commits.",
+                "inputSchema": {"type": "object", "properties": {
+                    "repo_name": {"type": "string"},
+                    "branch_a": {"type": "string", "default": "HEAD"},
+                    "branch_b": {"type": "string", "default": "origin/main"},
+                }, "required": ["repo_name"]},
+            },
+            "repo_search": {
+                "fn": trm.tool_repo_search,
+                "description": "Busca padrões em arquivos de um repositório.",
+                "inputSchema": {"type": "object", "properties": {
+                    "repo_name": {"type": "string"},
+                    "pattern": {"type": "string"},
+                    "file_type": {"type": "string", "default": "*.py"},
+                }, "required": ["repo_name", "pattern"]},
+            },
+            "repo_clone": {
+                "fn": trm.tool_clone_repo,
+                "description": "Clona um repositório Git para data/repos/ (--depth=1 por padrão).",
+                "inputSchema": {"type": "object", "properties": {
+                    "url": {"type": "string", "description": "URL do repositório Git"},
+                    "folder_name": {"type": "string", "description": "Nome da pasta destino (opcional)"},
+                }, "required": ["url"]},
+            },
+            "repo_git_log": {
+                "fn": trm.tool_git_log,
+                "description": "Mostra histórico de commits de um repositório.",
+                "inputSchema": {"type": "object", "properties": {
+                    "repo_name": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                }, "required": ["repo_name"]},
+            },
+            "repo_files": {
+                "fn": trm.tool_repo_files,
+                "description": "Lista estrutura de arquivos de um repositório.",
+                "inputSchema": {"type": "object", "properties": {
+                    "repo_name": {"type": "string"},
+                    "path": {"type": "string", "default": "."},
+                    "max_depth": {"type": "integer", "default": 3},
+                }, "required": ["repo_name"]},
+            },
+            "ai_analyze_repo": {
+                "fn": trm.tool_ai_analyze_repo,
+                "description": "Usa IA (Gemini) para analisar e resumir um repositório Git.",
+                "inputSchema": {"type": "object", "properties": {
+                    "repo_name": {"type": "string"},
+                }, "required": ["repo_name"]},
+            },
+        }
+        TOOLS.update(_REPO)
 
 
 # ===========================================================================

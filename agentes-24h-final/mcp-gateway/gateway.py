@@ -21,14 +21,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
 from typing import Any
+from collections import deque
+import threading
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -63,6 +66,29 @@ KM_TOKEN     = os.environ.get("KM_AUTH_TOKEN", "")
 OLLAMA_URL   = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 REPOS_DIR    = os.environ.get("GIT_REPO_PATH", "/data/repos")
 LOGS_DIR     = "/data/logs"
+
+CELERY_BROKER = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
+CELERY_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://redis:6379/1")
+
+try:
+    from celery import Celery
+    _celery_app = Celery("gateway", broker=CELERY_BROKER, backend=CELERY_BACKEND)
+    _HAS_CELERY = True
+except Exception as e:
+    _celery_app = None
+    _HAS_CELERY = False
+    log.warning("Celery não disponível: %s", e)
+
+try:
+    import redis
+    _redis_client = redis.Redis.from_url(CELERY_BROKER.split("/")[0] + "//redis:6379/0", decode_responses=True)
+    _HAS_REDIS = True
+except Exception:
+    _redis_client = None
+    _HAS_REDIS = False
+
+_EVENT_BUFFER: deque = deque(maxlen=500)
+_EVENT_LOCK = threading.Lock()
 
 # ============================================================
 # FastAPI App
@@ -230,6 +256,183 @@ async def list_logs():
             for f in files
         ]
     }
+
+
+# ============================================================
+# FULLSTACK: Celery Tasks Endpoints
+# ============================================================
+
+@app.get("/tasks/list")
+async def list_celery_tasks():
+    """Lista tarefas Celery disponíveis."""
+    if not _HAS_CELERY:
+        return {"tasks": [], "error": "Celery não disponível"}
+    return {"tasks": list(_celery_app.tasks.keys())}
+
+
+@app.get("/tasks/queue")
+async def celery_queue_status():
+    """Status das filas Celery."""
+    if not _HAS_REDIS:
+        return {"queues": [], "error": "Redis não disponível"}
+    try:
+        queues = {}
+        for qname in ["default", "high_priority", "celery"]:
+            count = _redis_client.llen(qname)
+            queues[qname] = count
+        return {"queues": queues, "total": sum(queues.values())}
+    except Exception as e:
+        return {"queues": {}, "error": str(e)}
+
+
+@app.get("/tasks/recent")
+async def recent_tasks(limit: int = 20):
+    """Lista tarefas recentes do buffer de eventos."""
+    events = list(_EVENT_BUFFER)[-limit:]
+    return {"count": len(events), "events": list(reversed(events))}
+
+
+@app.get("/tasks/{task_id}")
+async def get_task_status(task_id: str):
+    """Verifica status de uma tarefa Celery pelo ID."""
+    if not _HAS_CELERY:
+        raise HTTPException(status_code=503, detail="Celery não disponível")
+    try:
+        res = _celery_app.AsyncResult(task_id)
+        return {
+            "task_id": task_id,
+            "status": res.status,
+            "result": str(res.result) if res.result else None,
+            "ready": res.ready(),
+            "successful": res.successful() if res.ready() else None,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tasks/dispatch")
+async def dispatch_task(request: Request):
+    """Dispara uma tarefa Celery."""
+    if not _HAS_CELERY:
+        raise HTTPException(status_code=503, detail="Celery não disponível")
+    body = await request.json()
+    task_name = body.get("task_name")
+    kwargs = body.get("kwargs", {})
+    if not task_name:
+        raise HTTPException(status_code=400, detail="task_name é obrigatório")
+    full_name = f"tasks.{task_name}"
+    if full_name not in _celery_app.tasks:
+        available = [k.replace("tasks.", "") for k in _celery_app.tasks.keys() if k.startswith("tasks.")]
+        raise HTTPException(status_code=404, detail=f"Tarefa '{task_name}' não encontrada. Disponíveis: {available}")
+    try:
+        result = _celery_app.send_task(full_name, kwargs=kwargs, queue="default")
+        _emit_event("dispatched", {"task_id": str(result.id), "task_name": task_name})
+        return {"ok": True, "task_id": str(result.id), "task_name": task_name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tasks/{task_id}/retry")
+async def retry_task(task_id: str):
+    """Reexecuta uma tarefa."""
+    if not _HAS_CELERY:
+        raise HTTPException(status_code=503, detail="Celery não disponível")
+    try:
+        res = _celery_app.AsyncResult(task_id)
+        if hasattr(res, 'retry'):
+            res.retry()
+        return {"ok": True, "task_id": task_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/workers")
+async def worker_status():
+    """Lista workers Celery ativos via Flower API."""
+    try:
+        r = httpx.get("http://flower:5555/api/workers", timeout=5, auth=("admin", "-vWLe7DDFgZS1fozy6ry2g"))
+        workers = r.json()
+        summary = []
+        for name, info in workers.items():
+            summary.append({
+                "name": name,
+                "status": info.get("status", "unknown"),
+                "concurrency": info.get("concurrency", 0),
+                "active": info.get("stats", {}).get("total", {}).get("celery.tasks.tasks.health_check", 0),
+            })
+        return {"workers": summary, "count": len(summary)}
+    except Exception:
+        try:
+            if not _HAS_REDIS:
+                return {"workers": [], "error": "Sem acesso ao Flower nem Redis"}
+            return {"workers": [], "info": "Flower inacessível, verificando Redis..."}
+        except Exception:
+            return {"workers": [], "error": "Sistema de workers indisponível"}
+
+
+@app.get("/schedule")
+async def get_schedule():
+    """Retorna o beat schedule configurado."""
+    try:
+        r = httpx.get("http://flower:5555/api/beat", timeout=5, auth=("admin", "-vWLe7DDFgZS1fozy6ry2g"))
+        return r.json()
+    except Exception:
+        return {"schedule": [
+            {"name": "fix-bugs-periodically", "task": "tasks.fix_bugs", "interval": "1h"},
+            {"name": "add-feature-periodically", "task": "tasks.add_feature", "interval": "2h"},
+            {"name": "refactor-periodically", "task": "tasks.refactor", "interval": "4h"},
+            {"name": "improve-self-periodically", "task": "tasks.improve_self", "interval": "12h"},
+            {"name": "pen-test-daily", "task": "tasks.pen_test", "interval": "daily@3h"},
+            {"name": "health-check", "task": "tasks.health_check", "interval": "5min"},
+        ]}
+
+
+@app.get("/logs/stream")
+async def log_stream(request: Request):
+    """SSE stream de logs em tempo real."""
+    async def event_generator():
+        last_idx = 0
+        while True:
+            if await request.is_disconnected():
+                break
+            events = list(_EVENT_BUFFER)
+            new_events = events[last_idx:]
+            for ev in new_events:
+                data = json.dumps(ev)
+                yield f"data: {data}\n\n"
+            last_idx = len(events)
+            import asyncio
+            await asyncio.sleep(2)
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/logs/{filename}")
+async def read_log(filename: str):
+    """Lê o conteúdo de um arquivo de log."""
+    log_path = Path(LOGS_DIR) / filename
+    if not log_path.exists():
+        raise HTTPException(status_code=404, detail=f"Log '{filename}' não encontrado")
+    try:
+        content = log_path.read_text(encoding="utf-8", errors="replace")
+        return {"filename": filename, "size": len(content), "lines": content.count('\n') + 1, "content": content[:50000]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _emit_event(event_type: str, data: dict):
+    """Adiciona evento ao buffer de eventos."""
+    with _EVENT_LOCK:
+        _EVENT_BUFFER.append({
+            "type": event_type,
+            "data": data,
+            "ts": int(time.time()),
+        })
+
+
+@app.get("/events/recent")
+async def recent_events(limit: int = 50):
+    """Lista eventos recentes (tasks, providers, workers)."""
+    return {"count": len(_EVENT_BUFFER), "events": list(_EVENT_BUFFER)[-limit:]}
 
 
 # ============================================================

@@ -25,6 +25,7 @@ AUTH_TOKEN = os.environ.get("KM_AUTH_TOKEN", "")
 
 # Mapeamento: nome_da_chave → caminho do arquivo de secret
 SECRET_FILES = {
+    "groq_key":          "/run/secrets/groq_key",
     "openrouter_key":    "/run/secrets/openrouter_key",
     "google_oauth_token": "/run/secrets/google_oauth_token",
     "firecrawl_key":     "/run/secrets/firecrawl_key",

@@ -196,7 +196,7 @@ services:
       GIT_USER_NAME: ${GIT_USER_NAME:-Agente Autonomo}
       OLLAMA_DEFAULT_MODEL: ${OLLAMA_DEFAULT_MODEL:-phi3:mini}
     volumes:
-      - data_repos:/data/repos
+      - ./repos:/data/repos
       - data_logs:/data/logs
     networks:
       - agents_net

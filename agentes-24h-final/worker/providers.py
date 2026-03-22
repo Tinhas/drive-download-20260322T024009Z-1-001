@@ -29,7 +29,7 @@ log = logging.getLogger("providers")
 
 GROQ_FREE_MODELS = [
     "llama-3.3-70b-versatile",
-    "mixtral-8x7b-32768",
+    "llama-3.1-8b-instant",
     "gemma2-9b-it",
 ]
 
@@ -153,7 +153,7 @@ class GroqProvider(BaseProvider):
             if r.status_code == 429:
                 raise RuntimeError("Groq rate limit.")
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+            return r.json()["choices"][0]["message"]["content"].lstrip("\ufeff")
 
         return _retry(_call)
 
@@ -204,7 +204,7 @@ class OpenRouterProvider(BaseProvider):
             if r.status_code == 429:
                 raise RuntimeError("OpenRouter rate limit.")
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+            return r.json()["choices"][0]["message"]["content"].lstrip("\ufeff")
 
         return _retry(_call)
 
@@ -251,7 +251,7 @@ class TogetherAIProvider(BaseProvider):
             if r.status_code == 429:
                 raise RuntimeError("TogetherAI rate limit.")
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+            return r.json()["choices"][0]["message"]["content"].lstrip("\ufeff")
 
         return _retry(_call)
 
@@ -298,7 +298,7 @@ class FireworksAIProvider(BaseProvider):
             if r.status_code == 429:
                 raise RuntimeError("FireworksAI rate limit.")
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+            return r.json()["choices"][0]["message"]["content"].lstrip("\ufeff")
 
         return _retry(_call)
 
@@ -330,7 +330,7 @@ class GeminiProvider(BaseProvider):
             if r.status_code == 429:
                 raise RuntimeError("Gemini rate limit.")
             r.raise_for_status()
-            return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+            return r.json()["candidates"][0]["content"]["parts"][0]["text"].lstrip("\ufeff")
 
         return _retry(_call)
 
