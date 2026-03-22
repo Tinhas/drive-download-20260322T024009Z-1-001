@@ -402,8 +402,12 @@ setInterval(load, 30000);
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
-    """Dashboard desktop para acessar todas as ferramentas."""
-    return DASHBOARD_HTML
+    """Dashboard avançado desktop para acompanhar a orquestração e uso de tokens."""
+    try:
+        with open("dashboard.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return DASHBOARD_HTML
 
 
 # ============================================================

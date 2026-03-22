@@ -1,0 +1,7 @@
+{
+    "python.defaultInterpreterPath": "C:\\Python314\\python.exe",
+    "python.analysis.extraPaths": [
+        "../agentes-24h-final/mcp-server",
+        "../agentes-24h-final/mcp-gateway"
+    ]
+}

@@ -1,22 +1,22 @@
-"""
+﻿"""
 mcp-server/server.py
 ====================
-Servidor MCP (Model Context Protocol) que expõe as skills dos agentes
-como ferramentas para qualquer cliente compatível (Claude Desktop,
+Servidor MCP (Model Context Protocol) que expÃµe as skills dos agentes
+como ferramentas para qualquer cliente compatÃ­vel (Claude Desktop,
 OpenCode, Continue.dev, etc.).
 
-Ferramentas disponíveis:
-  - firecrawl_scrape      : extrai conteúdo de uma URL
+Ferramentas disponÃ­veis:
+  - firecrawl_scrape      : extrai conteÃºdo de uma URL
   - firecrawl_search      : busca na web e retorna markdown
   - firecrawl_crawl       : rastreia site inteiro
   - notebook_ask          : pergunta sobre um documento (via Gemini)
   - notebook_summarize    : resume um texto longo
   - run_task              : dispara qualquer tarefa Celery manualmente
-  - list_repos            : lista repositórios disponíveis
-  - read_pentest_reports  : lê relatórios de segurança gerados
-  - provider_status       : verifica quais provedores de IA estão ativos
+  - list_repos            : lista repositÃ³rios disponÃ­veis
+  - read_pentest_reports  : lÃª relatÃ³rios de seguranÃ§a gerados
+  - provider_status       : verifica quais provedores de IA estÃ£o ativos
 
-Protocolo: JSON-RPC 2.0 sobre stdio (padrão MCP).
+Protocolo: JSON-RPC 2.0 sobre stdio (padrÃ£o MCP).
 """
 
 from __future__ import annotations
@@ -38,12 +38,15 @@ try:
     import tools_neuro_design as tnd
     import tools_presentations as tp
     import tools_niche_intel as tni
+    import tools_reverse_eng as tre
+    import tools_llm_connectors as tllm
+    import tools_delegation as tdel
     _EXTRA_TOOLS = True
 except ImportError:
     _EXTRA_TOOLS = False
 
 # ---------------------------------------------------------------------------
-# Logging para stderr (stdout é reservado para o protocolo MCP)
+# Logging para stderr (stdout Ã© reservado para o protocolo MCP)
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     stream=sys.stderr,
@@ -53,7 +56,7 @@ logging.basicConfig(
 log = logging.getLogger("mcp-server")
 
 # ---------------------------------------------------------------------------
-# Configuração
+# ConfiguraÃ§Ã£o
 # ---------------------------------------------------------------------------
 CELERY_BROKER = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 KM_URL        = os.environ.get("KM_URL", "http://key-manager:8100")
@@ -86,11 +89,11 @@ def _gemini_key() -> str:
 
 
 # ===========================================================================
-# Implementações das ferramentas
+# ImplementaÃ§Ãµes das ferramentas
 # ===========================================================================
 
 def tool_firecrawl_scrape(url: str, only_main_content: bool = True) -> str:
-    """Extrai conteúdo em Markdown de uma URL."""
+    """Extrai conteÃºdo em Markdown de uma URL."""
     r = httpx.post(
         "https://api.firecrawl.dev/v1/scrape",
         headers=_firecrawl_headers(),
@@ -101,7 +104,7 @@ def tool_firecrawl_scrape(url: str, only_main_content: bool = True) -> str:
     data = r.json()
     if not data.get("success"):
         return f"Erro: {data.get('error')}"
-    return data["data"].get("markdown", "(sem conteúdo)")
+    return data["data"].get("markdown", "(sem conteÃºdo)")
 
 
 def tool_firecrawl_search(query: str, limit: int = 5) -> str:
@@ -118,13 +121,13 @@ def tool_firecrawl_search(query: str, limit: int = 5) -> str:
         return f"Erro: {data.get('error')}"
     results = []
     for item in data.get("data", []):
-        results.append(f"### {item.get('metadata', {}).get('title', 'Sem título')}\n"
+        results.append(f"### {item.get('metadata', {}).get('title', 'Sem tÃ­tulo')}\n"
                        f"URL: {item.get('url', '')}\n\n{item.get('markdown', '')[:2000]}")
     return "\n\n---\n\n".join(results) or "Nenhum resultado."
 
 
 def tool_firecrawl_crawl(url: str, max_pages: int = 5) -> str:
-    """Rastreia um site e retorna conteúdo de todas as páginas."""
+    """Rastreia um site e retorna conteÃºdo de todas as pÃ¡ginas."""
     # Inicia job
     r = httpx.post(
         "https://api.firecrawl.dev/v1/crawl",
@@ -154,7 +157,7 @@ def tool_firecrawl_crawl(url: str, max_pages: int = 5) -> str:
             for p in pages:
                 out.append(f"## {p.get('metadata', {}).get('title', p.get('url', ''))}\n"
                            f"{p.get('markdown', '')[:3000]}")
-            return "\n\n---\n\n".join(out) or "Nenhuma página rastreada."
+            return "\n\n---\n\n".join(out) or "Nenhuma pÃ¡gina rastreada."
         if status.get("status") in ("failed", "cancelled"):
             return f"Crawl falhou: {status}"
     return "Timeout aguardando crawl."
@@ -164,7 +167,7 @@ def tool_notebook_ask(question: str, document_text: str = "", document_url: str 
     """Faz uma pergunta sobre um documento usando o Gemini como NotebookLM."""
     key = _gemini_key()
     if not key:
-        return "GEMINI_API_KEY não configurada."
+        return "GEMINI_API_KEY nÃ£o configurada."
 
     parts: list[dict] = []
     if document_url:
@@ -195,8 +198,8 @@ def tool_notebook_summarize(text: str) -> str:
     """Resume um texto longo."""
     return tool_notebook_ask(
         question=(
-            "Crie um resumo estruturado em português com: "
-            "pontos principais, conclusões e insights acionáveis."
+            "Crie um resumo estruturado em portuguÃªs com: "
+            "pontos principais, conclusÃµes e insights acionÃ¡veis."
         ),
         document_text=text,
     )
@@ -205,7 +208,7 @@ def tool_notebook_summarize(text: str) -> str:
 def tool_run_task(task_name: str, kwargs: dict | None = None) -> str:
     """
     Dispara uma tarefa Celery manualmente.
-    Tarefas disponíveis: fix_bugs, add_feature, refactor, pen_test,
+    Tarefas disponÃ­veis: fix_bugs, add_feature, refactor, pen_test,
                          improve_self, health_check
     """
     try:
@@ -218,24 +221,24 @@ def tool_run_task(task_name: str, kwargs: dict | None = None) -> str:
 
 
 def tool_list_repos() -> str:
-    """Lista repositórios Git disponíveis em data/repos/."""
+    """Lista repositÃ³rios Git disponÃ­veis em data/repos/."""
     base = Path(REPOS_DIR)
     if not base.exists():
-        return "Diretório data/repos/ não encontrado."
+        return "DiretÃ³rio data/repos/ nÃ£o encontrado."
     repos = [p.name for p in base.iterdir() if (p / ".git").exists()]
     if not repos:
-        return "Nenhum repositório Git encontrado em data/repos/."
-    return "Repositórios disponíveis:\n" + "\n".join(f"  - {r}" for r in sorted(repos))
+        return "Nenhum repositÃ³rio Git encontrado em data/repos/."
+    return "RepositÃ³rios disponÃ­veis:\n" + "\n".join(f"  - {r}" for r in sorted(repos))
 
 
 def tool_read_pentest_reports(limit: int = 5) -> str:
-    """Lê os relatórios de segurança mais recentes."""
+    """LÃª os relatÃ³rios de seguranÃ§a mais recentes."""
     logs = Path(LOGS_DIR)
     if not logs.exists():
-        return "Diretório de logs não encontrado."
+        return "DiretÃ³rio de logs nÃ£o encontrado."
     reports = sorted(logs.glob("pentest_*.json"), reverse=True)[:limit]
     if not reports:
-        return "Nenhum relatório de pentest encontrado ainda."
+        return "Nenhum relatÃ³rio de pentest encontrado ainda."
     out = []
     for r in reports:
         out.append(f"### {r.name}\n{r.read_text()[:3000]}")
@@ -243,7 +246,7 @@ def tool_read_pentest_reports(limit: int = 5) -> str:
 
 
 def tool_provider_status() -> str:
-    """Verifica quais provedores de IA estão disponíveis."""
+    """Verifica quais provedores de IA estÃ£o disponÃ­veis."""
     status = {}
 
     # Ollama
@@ -252,39 +255,39 @@ def tool_provider_status() -> str:
             os.environ.get("OLLAMA_URL", "http://ollama:11434") + "/api/tags",
             timeout=5,
         )
-        status["ollama"] = "✅ disponível" if r.status_code == 200 else "❌ erro"
+        status["ollama"] = "âœ… disponÃ­vel" if r.status_code == 200 else "âŒ erro"
     except Exception:
-        status["ollama"] = "❌ inacessível"
+        status["ollama"] = "âŒ inacessÃ­vel"
 
     # OpenRouter
     try:
         key = _get_secret("openrouter_key")
-        status["openrouter"] = "✅ chave configurada" if key and not key.startswith("PLACEHOLDER") else "⚠️  placeholder"
+        status["openrouter"] = "âœ… chave configurada" if key and not key.startswith("PLACEHOLDER") else "âš ï¸  placeholder"
     except Exception:
-        status["openrouter"] = "❌ erro ao buscar chave"
+        status["openrouter"] = "âŒ erro ao buscar chave"
 
     # Gemini
     key = _gemini_key()
-    status["gemini"] = "✅ chave configurada" if key else "⚠️  GEMINI_API_KEY não definida"
+    status["gemini"] = "âœ… chave configurada" if key else "âš ï¸  GEMINI_API_KEY nÃ£o definida"
 
     # Firecrawl
     try:
         fc_key = _get_secret("firecrawl_key")
-        status["firecrawl"] = "✅ chave configurada" if fc_key and not fc_key.startswith("PLACEHOLDER") else "⚠️  placeholder"
+        status["firecrawl"] = "âœ… chave configurada" if fc_key and not fc_key.startswith("PLACEHOLDER") else "âš ï¸  placeholder"
     except Exception:
-        status["firecrawl"] = "❌ erro ao buscar chave"
+        status["firecrawl"] = "âŒ erro ao buscar chave"
 
     lines = [f"  {k}: {v}" for k, v in status.items()]
     return "Status dos provedores:\n" + "\n".join(lines)
 
 
 # ===========================================================================
-# Registro de ferramentas (name → função + schema)
+# Registro de ferramentas (name â†’ funÃ§Ã£o + schema)
 # ===========================================================================
 TOOLS: dict[str, dict] = {
     "firecrawl_scrape": {
         "fn": tool_firecrawl_scrape,
-        "description": "Extrai o conteúdo de uma URL em formato Markdown.",
+        "description": "Extrai o conteÃºdo de uma URL em formato Markdown.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -301,14 +304,14 @@ TOOLS: dict[str, dict] = {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Termos de busca"},
-                "limit": {"type": "integer", "default": 5, "description": "Nº de resultados"},
+                "limit": {"type": "integer", "default": 5, "description": "NÂº de resultados"},
             },
             "required": ["query"],
         },
     },
     "firecrawl_crawl": {
         "fn": tool_firecrawl_crawl,
-        "description": "Rastreia um site inteiro e retorna o conteúdo de todas as páginas.",
+        "description": "Rastreia um site inteiro e retorna o conteÃºdo de todas as pÃ¡ginas.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -359,33 +362,64 @@ TOOLS: dict[str, dict] = {
     },
     "list_repos": {
         "fn": tool_list_repos,
-        "description": "Lista os repositórios Git disponíveis para os agentes processarem.",
+        "description": "Lista os repositÃ³rios Git disponÃ­veis para os agentes processarem.",
         "inputSchema": {"type": "object", "properties": {}},
     },
     "read_pentest_reports": {
         "fn": tool_read_pentest_reports,
-        "description": "Lê os relatórios de segurança mais recentes gerados pelos agentes.",
+        "description": "LÃª os relatÃ³rios de seguranÃ§a mais recentes gerados pelos agentes.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "default": 5, "description": "Nº de relatórios"},
+                "limit": {"type": "integer", "default": 5, "description": "NÂº de relatÃ³rios"},
             },
         },
     },
     "provider_status": {
         "fn": tool_provider_status,
-        "description": "Verifica quais provedores de IA e skills estão disponíveis.",
+        "description": "Verifica quais provedores de IA e skills estÃ£o disponÃ­veis.",
         "inputSchema": {"type": "object", "properties": {}},
     },
 }
 
 # ---------------------------------------------------------------------------
-# Registro dinâmico das ferramentas extras (content, cybersec, web)
+# Registro dinÃ¢mico das ferramentas extras (content, cybersec, web)
 # ---------------------------------------------------------------------------
 if _EXTRA_TOOLS:
     _EXTRA: dict[str, dict] = {
 
-        # ── CONTENT & COPY ────────────────────────────────────────────────
+        # â”€â”€ REVERSE ENGINEERING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        "reverse_engineer_architecture": {
+            "fn": tre.reverse_engineer_architecture,
+            "description": "Engenharia reversa Ã©tica para inferir arquitetura sem precisar clonar o repositÃ³rio.",
+            "inputSchema": {"type": "object", "properties": {
+                "url": {"type": "string"},
+                "depth": {"type": "string", "default": "high_level", "enum": ["high_level", "detailed"]},
+            }, "required": ["url"]},
+        },
+        "reverse_engineer_ddd": {
+            "fn": tre.reverse_engineer_ddd,
+            "description": "Extrai Bounded Contexts, Aggregates e Linguagem UbÃ­qua a partir de uma URL/Repo.",
+            "inputSchema": {"type": "object", "properties": {
+                "url": {"type": "string"},
+            }, "required": ["url"]},
+        },
+        "reverse_engineer_tdd": {
+            "fn": tre.reverse_engineer_tdd,
+            "description": "Gera especificaÃ§Ãµes TDD/BDD focadas em rotas de negÃ³cio a partir do comportamento online.",
+            "inputSchema": {"type": "object", "properties": {
+                "url": {"type": "string"},
+            }, "required": ["url"]},
+        },
+        "reverse_engineer_trd": {
+            "fn": tre.reverse_engineer_trd,
+            "description": "Gera Documento de Requisitos TÃ©cnicos (TRD) inferido.",
+            "inputSchema": {"type": "object", "properties": {
+                "url": {"type": "string"},
+            }, "required": ["url"]},
+        },
+
+        # â”€â”€ CONTENT & COPY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         "hackernews_top": {
             "fn": tc.hackernews_top,
             "description": "Retorna os top stories do Hacker News agora (tech, startups, IA).",
@@ -406,7 +440,7 @@ if _EXTRA_TOOLS:
         },
         "rss_fetch": {
             "fn": tc.rss_fetch,
-            "description": "Lê qualquer feed RSS/Atom e retorna os artigos mais recentes.",
+            "description": "LÃª qualquer feed RSS/Atom e retorna os artigos mais recentes.",
             "inputSchema": {"type": "object", "properties": {
                 "feed_url": {"type": "string", "description": "URL do feed RSS/Atom"},
                 "limit":    {"type": "integer", "default": 10},
@@ -414,7 +448,7 @@ if _EXTRA_TOOLS:
         },
         "seo_analyze": {
             "fn": tc.seo_analyze,
-            "description": "Análise local de SEO: legibilidade Flesch, densidade de keyword, sugestões.",
+            "description": "AnÃ¡lise local de SEO: legibilidade Flesch, densidade de keyword, sugestÃµes.",
             "inputSchema": {"type": "object", "properties": {
                 "text":    {"type": "string"},
                 "keyword": {"type": "string", "default": ""},
@@ -423,7 +457,7 @@ if _EXTRA_TOOLS:
         },
         "trending_github": {
             "fn": tc.trending_github,
-            "description": "Repositórios em alta no GitHub (daily/weekly/monthly).",
+            "description": "RepositÃ³rios em alta no GitHub (daily/weekly/monthly).",
             "inputSchema": {"type": "object", "properties": {
                 "language": {"type": "string", "default": ""},
                 "since":    {"type": "string", "default": "daily",
@@ -443,7 +477,7 @@ if _EXTRA_TOOLS:
         },
         "dictionary_lookup": {
             "fn": tc.dictionary_lookup,
-            "description": "Definição, exemplos e sinônimos de uma palavra via Free Dictionary API.",
+            "description": "DefiniÃ§Ã£o, exemplos e sinÃ´nimos de uma palavra via Free Dictionary API.",
             "inputSchema": {"type": "object", "properties": {
                 "word": {"type": "string"},
                 "lang": {"type": "string", "default": "en"},
@@ -477,7 +511,7 @@ if _EXTRA_TOOLS:
             }},
         },
 
-        # ── CYBERSEGURANÇA ────────────────────────────────────────────────
+        # â”€â”€ CYBERSEGURANÃ‡A â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         "dns_lookup": {
             "fn": ts.dns_lookup,
             "description": "Consulta registros DNS via Cloudflare DoH (A, AAAA, MX, TXT, NS, CNAME, SOA, CAA).",
@@ -497,21 +531,21 @@ if _EXTRA_TOOLS:
         },
         "http_headers_audit": {
             "fn": ts.http_headers_audit,
-            "description": "Auditoria de cabeçalhos de segurança HTTP (HSTS, CSP, X-Frame, etc.) com nota A-F.",
+            "description": "Auditoria de cabeÃ§alhos de seguranÃ§a HTTP (HSTS, CSP, X-Frame, etc.) com nota A-F.",
             "inputSchema": {"type": "object", "properties": {
                 "url": {"type": "string"},
             }, "required": ["url"]},
         },
         "ip_info": {
             "fn": ts.ip_info,
-            "description": "Geolocalização, ASN, ISP e detecção de proxy/VPN de um IP ou domínio.",
+            "description": "GeolocalizaÃ§Ã£o, ASN, ISP e detecÃ§Ã£o de proxy/VPN de um IP ou domÃ­nio.",
             "inputSchema": {"type": "object", "properties": {
                 "ip_or_domain": {"type": "string"},
             }, "required": ["ip_or_domain"]},
         },
         "wayback_lookup": {
             "fn": ts.wayback_lookup,
-            "description": "Verifica snapshots históricos no Wayback Machine (OSINT, auditoria).",
+            "description": "Verifica snapshots histÃ³ricos no Wayback Machine (OSINT, auditoria).",
             "inputSchema": {"type": "object", "properties": {
                 "url":   {"type": "string"},
                 "limit": {"type": "integer", "default": 5},
@@ -528,7 +562,7 @@ if _EXTRA_TOOLS:
         },
         "subdomain_enum": {
             "fn": ts.subdomain_enum,
-            "description": "Enumeração passiva de subdomínios via Certificate Transparency (crt.sh). Sem tráfego para o alvo.",
+            "description": "EnumeraÃ§Ã£o passiva de subdomÃ­nios via Certificate Transparency (crt.sh). Sem trÃ¡fego para o alvo.",
             "inputSchema": {"type": "object", "properties": {
                 "domain": {"type": "string"},
                 "limit":  {"type": "integer", "default": 30},
@@ -536,14 +570,14 @@ if _EXTRA_TOOLS:
         },
         "whois_rdap": {
             "fn": ts.whois_rdap,
-            "description": "WHOIS moderno via RDAP (RFC 7483): datas, registrar, nameservers, expiração.",
+            "description": "WHOIS moderno via RDAP (RFC 7483): datas, registrar, nameservers, expiraÃ§Ã£o.",
             "inputSchema": {"type": "object", "properties": {
                 "domain": {"type": "string"},
             }, "required": ["domain"]},
         },
         "open_ports_common": {
             "fn": ts.open_ports_common,
-            "description": "Verifica portas comuns abertas em um host. ⚠️ Use apenas em hosts autorizados.",
+            "description": "Verifica portas comuns abertas em um host. âš ï¸ Use apenas em hosts autorizados.",
             "inputSchema": {"type": "object", "properties": {
                 "host":    {"type": "string"},
                 "timeout": {"type": "number", "default": 1.5},
@@ -558,13 +592,13 @@ if _EXTRA_TOOLS:
         },
         "security_score": {
             "fn": ts.security_score,
-            "description": "Score consolidado de segurança de um domínio: SSL + headers + DNS + WHOIS + subdomínios.",
+            "description": "Score consolidado de seguranÃ§a de um domÃ­nio: SSL + headers + DNS + WHOIS + subdomÃ­nios.",
             "inputSchema": {"type": "object", "properties": {
                 "domain": {"type": "string"},
             }, "required": ["domain"]},
         },
 
-        # ── WEB & SITES ───────────────────────────────────────────────────
+        # â”€â”€ WEB & SITES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         "screenshot_url": {
             "fn": tw.screenshot_url,
             "description": "Captura screenshot de qualquer URL via Microlink.io (gratuito). Retorna URL da imagem.",
@@ -576,7 +610,7 @@ if _EXTRA_TOOLS:
         },
         "html_validate": {
             "fn": tw.html_validate,
-            "description": "Valida HTML via W3C Validator. Aceita URL ou código HTML diretamente.",
+            "description": "Valida HTML via W3C Validator. Aceita URL ou cÃ³digo HTML diretamente.",
             "inputSchema": {"type": "object", "properties": {
                 "url_or_html": {"type": "string"},
             }, "required": ["url_or_html"]},
@@ -592,7 +626,7 @@ if _EXTRA_TOOLS:
         },
         "url_shorten": {
             "fn": tw.url_shorten,
-            "description": "Encurta URL via is.gd (gratuito, sem chave, slug customizável).",
+            "description": "Encurta URL via is.gd (gratuito, sem chave, slug customizÃ¡vel).",
             "inputSchema": {"type": "object", "properties": {
                 "url":         {"type": "string"},
                 "custom_slug": {"type": "string", "default": ""},
@@ -617,7 +651,7 @@ if _EXTRA_TOOLS:
                 "repo":           {"type": "string", "description": "usuario/repositorio"},
                 "html_content":   {"type": "string"},
                 "github_token":   {"type": "string"},
-                "commit_message": {"type": "string", "default": "Deploy automático"},
+                "commit_message": {"type": "string", "default": "Deploy automÃ¡tico"},
                 "branch":         {"type": "string", "default": "gh-pages"},
             }, "required": ["repo","html_content","github_token"]},
         },
@@ -665,7 +699,7 @@ if _EXTRA_TOOLS:
         },
         "broken_links_check": {
             "fn": tw.broken_links_check,
-            "description": "Verifica links quebrados em uma página (404, timeout, redirects).",
+            "description": "Verifica links quebrados em uma pÃ¡gina (404, timeout, redirects).",
             "inputSchema": {"type": "object", "properties": {
                 "url":       {"type": "string"},
                 "max_links": {"type": "integer", "default": 30},
@@ -673,7 +707,7 @@ if _EXTRA_TOOLS:
         },
         "favicon_check": {
             "fn": tw.favicon_check,
-            "description": "Verifica favicon, apple-touch-icon, manifest.json e ícones PWA de um site.",
+            "description": "Verifica favicon, apple-touch-icon, manifest.json e Ã­cones PWA de um site.",
             "inputSchema": {"type": "object", "properties": {
                 "url": {"type": "string"},
             }, "required": ["url"]},
@@ -681,15 +715,15 @@ if _EXTRA_TOOLS:
     }
     TOOLS.update(_EXTRA)
 
-    # ── NEURO DESIGN & BIGTECH ────────────────────────────────────────
+    # â”€â”€ NEURO DESIGN & BIGTECH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _NEURO: dict[str, dict] = {
         "design_system_generate": {
             "fn": tnd.design_system_generate,
-            "description": "Gera design system completo (CSS variables, escala tipográfica, spacing, sombras) inspirado em Stripe/Linear/Apple/Vercel/Figma.",
+            "description": "Gera design system completo (CSS variables, escala tipogrÃ¡fica, spacing, sombras) inspirado em Stripe/Linear/Apple/Vercel/Figma.",
             "inputSchema": {"type": "object", "properties": {
                 "brand_name":    {"type": "string"},
                 "niche":         {"type": "string"},
-                "personality":   {"type": "string", "default": "moderno e confiável"},
+                "personality":   {"type": "string", "default": "moderno e confiÃ¡vel"},
                 "inspired_by":   {"type": "string", "default": "stripe",
                                   "enum": ["stripe","linear","vercel","apple","figma","notion"]},
                 "primary_color": {"type": "string", "default": ""},
@@ -697,7 +731,7 @@ if _EXTRA_TOOLS:
         },
         "bigtech_site_generate": {
             "fn": tnd.bigtech_site_generate,
-            "description": "Gera site vitrine completo nível Stripe/Linear/Apple via IA — neurociência aplicada, CRO, acessibilidade, SEO.",
+            "description": "Gera site vitrine completo nÃ­vel Stripe/Linear/Apple via IA â€” neurociÃªncia aplicada, CRO, acessibilidade, SEO.",
             "inputSchema": {"type": "object", "properties": {
                 "product":       {"type": "string"},
                 "niche":         {"type": "string"},
@@ -710,19 +744,19 @@ if _EXTRA_TOOLS:
         },
         "neuro_copy_optimize": {
             "fn": tnd.neuro_copy_optimize,
-            "description": "Reescreve copy aplicando neurociência: loss aversion, especificidade, F-pattern, cognitive fluency, power words.",
+            "description": "Reescreve copy aplicando neurociÃªncia: loss aversion, especificidade, F-pattern, cognitive fluency, power words.",
             "inputSchema": {"type": "object", "properties": {
                 "original_copy": {"type": "string"},
                 "product":       {"type": "string"},
                 "audience":      {"type": "string"},
-                "goal":          {"type": "string", "default": "conversão"},
+                "goal":          {"type": "string", "default": "conversÃ£o"},
                 "framework":     {"type": "string", "default": "PAS",
                                   "enum": ["AIDA","PAS","StoryBrand","4Ps"]},
             }, "required": ["original_copy","product","audience"]},
         },
         "above_fold_blueprint": {
             "fn": tnd.above_fold_blueprint,
-            "description": "Blueprint científico pixel-a-pixel do hero section com checklist de neurociência, eye-tracking e CRO.",
+            "description": "Blueprint cientÃ­fico pixel-a-pixel do hero section com checklist de neurociÃªncia, eye-tracking e CRO.",
             "inputSchema": {"type": "object", "properties": {
                 "product":  {"type": "string"},
                 "niche":    {"type": "string"},
@@ -732,17 +766,17 @@ if _EXTRA_TOOLS:
         },
         "color_psychology": {
             "fn": tnd.color_psychology,
-            "description": "Paleta de cores baseada em psicologia, neurociência e diferenciação competitiva por nicho.",
+            "description": "Paleta de cores baseada em psicologia, neurociÃªncia e diferenciaÃ§Ã£o competitiva por nicho.",
             "inputSchema": {"type": "object", "properties": {
                 "niche":               {"type": "string"},
-                "desired_emotion":     {"type": "string", "default": "confiança"},
+                "desired_emotion":     {"type": "string", "default": "confianÃ§a"},
                 "audience_age":        {"type": "string", "default": "adulto"},
                 "competitors_colors":  {"type": "string", "default": ""},
             }, "required": ["niche"]},
         },
         "typography_scale": {
             "fn": tnd.typography_scale,
-            "description": "Sistema tipográfico completo com escala modular, combinações de fontes e uso semântico — padrão BigTech.",
+            "description": "Sistema tipogrÃ¡fico completo com escala modular, combinaÃ§Ãµes de fontes e uso semÃ¢ntico â€” padrÃ£o BigTech.",
             "inputSchema": {"type": "object", "properties": {
                 "brand_personality": {"type": "string", "default": "moderno e direto"},
                 "context":           {"type": "string", "default": "web"},
@@ -751,7 +785,7 @@ if _EXTRA_TOOLS:
         },
         "persuasion_framework": {
             "fn": tnd.persuasion_framework,
-            "description": "Aplica framework de persuasão completo (AIDA/PAS/StoryBrand/4Ps) com neurociência e roteiro de copy.",
+            "description": "Aplica framework de persuasÃ£o completo (AIDA/PAS/StoryBrand/4Ps) com neurociÃªncia e roteiro de copy.",
             "inputSchema": {"type": "object", "properties": {
                 "framework":    {"type": "string", "enum": ["AIDA","PAS","StoryBrand","4Ps"]},
                 "product":      {"type": "string"},
@@ -769,7 +803,7 @@ if _EXTRA_TOOLS:
         },
         "attention_heatmap_predict": {
             "fn": tnd.attention_heatmap_predict,
-            "description": "Prediz heatmap de atenção (F/Z-pattern) baseado em pesquisas de eye-tracking do Nielsen Norman Group.",
+            "description": "Prediz heatmap de atenÃ§Ã£o (F/Z-pattern) baseado em pesquisas de eye-tracking do Nielsen Norman Group.",
             "inputSchema": {"type": "object", "properties": {
                 "page_type": {"type": "string", "default": "landing",
                               "enum": ["landing","artigo","ecommerce"]},
@@ -777,10 +811,10 @@ if _EXTRA_TOOLS:
             }},
         },
 
-        # ── APRESENTAÇÕES ─────────────────────────────────────────────────
+        # â”€â”€ APRESENTAÃ‡Ã•ES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         "presentation_from_doc": {
             "fn": tp.presentation_from_doc,
-            "description": "Cria apresentação profissional completa a partir de um documento. Replica o NotebookLM com output de slides navegáveis em HTML.",
+            "description": "Cria apresentaÃ§Ã£o profissional completa a partir de um documento. Replica o NotebookLM com output de slides navegÃ¡veis em HTML.",
             "inputSchema": {"type": "object", "properties": {
                 "document_text":       {"type": "string"},
                 "presentation_goal":   {"type": "string", "default": "informar",
@@ -793,11 +827,11 @@ if _EXTRA_TOOLS:
         },
         "presentation_from_topic": {
             "fn": tp.presentation_from_topic,
-            "description": "Cria apresentação completa sobre qualquer tema do zero. Slides HTML interativos com navegação por teclado, fullscreen e notas do apresentador.",
+            "description": "Cria apresentaÃ§Ã£o completa sobre qualquer tema do zero. Slides HTML interativos com navegaÃ§Ã£o por teclado, fullscreen e notas do apresentador.",
             "inputSchema": {"type": "object", "properties": {
                 "topic":       {"type": "string"},
-                "depth":       {"type": "string", "default": "intermediário",
-                                "enum": ["básico","intermediário","avançado","executivo"]},
+                "depth":       {"type": "string", "default": "intermediÃ¡rio",
+                                "enum": ["bÃ¡sico","intermediÃ¡rio","avanÃ§ado","executivo"]},
                 "audience":    {"type": "string", "default": "profissional"},
                 "slide_count": {"type": "integer", "default": 15},
                 "style":       {"type": "string", "default": "startup",
@@ -807,7 +841,7 @@ if _EXTRA_TOOLS:
         },
         "pitch_deck_generate": {
             "fn": tp.pitch_deck_generate,
-            "description": "Gera pitch deck completo para investidores no formato Sequoia Capital (12 slides: Problem→Solution→Market→Traction→Team→Ask).",
+            "description": "Gera pitch deck completo para investidores no formato Sequoia Capital (12 slides: Problemâ†’Solutionâ†’Marketâ†’Tractionâ†’Teamâ†’Ask).",
             "inputSchema": {"type": "object", "properties": {
                 "company_name": {"type": "string"},
                 "product":      {"type": "string"},
@@ -821,7 +855,7 @@ if _EXTRA_TOOLS:
         },
         "executive_summary_slide": {
             "fn": tp.executive_summary_slide,
-            "description": "Gera slide único de resumo executivo estilo McKinsey (Pirâmide de Minto: Situation→Complication→Resolution).",
+            "description": "Gera slide Ãºnico de resumo executivo estilo McKinsey (PirÃ¢mide de Minto: Situationâ†’Complicationâ†’Resolution).",
             "inputSchema": {"type": "object", "properties": {
                 "topic":          {"type": "string"},
                 "context":        {"type": "string"},
@@ -831,7 +865,7 @@ if _EXTRA_TOOLS:
         },
         "slide_outline_generate": {
             "fn": tp.slide_outline_generate,
-            "description": "Gera outline da apresentação para aprovação antes de criar os slides completos.",
+            "description": "Gera outline da apresentaÃ§Ã£o para aprovaÃ§Ã£o antes de criar os slides completos.",
             "inputSchema": {"type": "object", "properties": {
                 "topic":       {"type": "string"},
                 "slide_count": {"type": "integer", "default": 10},
@@ -839,10 +873,10 @@ if _EXTRA_TOOLS:
             }, "required": ["topic"]},
         },
 
-        # ── INTELIGÊNCIA DE NICHO ─────────────────────────────────────────
+        # â”€â”€ INTELIGÃŠNCIA DE NICHO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         "niche_top_sites": {
             "fn": tni.niche_top_sites,
-            "description": "Encontra os sites/produtos líderes de qualquer nicho com análise de por que são líderes e o que aprender com eles.",
+            "description": "Encontra os sites/produtos lÃ­deres de qualquer nicho com anÃ¡lise de por que sÃ£o lÃ­deres e o que aprender com eles.",
             "inputSchema": {"type": "object", "properties": {
                 "niche":   {"type": "string"},
                 "country": {"type": "string", "default": "BR"},
@@ -860,7 +894,7 @@ if _EXTRA_TOOLS:
         },
         "niche_copy_patterns": {
             "fn": tni.niche_copy_patterns,
-            "description": "Extrai padrões de copy dos líderes do nicho (headlines, CTAs, taglines, value props, email subjects).",
+            "description": "Extrai padrÃµes de copy dos lÃ­deres do nicho (headlines, CTAs, taglines, value props, email subjects).",
             "inputSchema": {"type": "object", "properties": {
                 "niche":        {"type": "string"},
                 "copy_element": {"type": "string", "default": "headlines",
@@ -869,7 +903,7 @@ if _EXTRA_TOOLS:
         },
         "serp_analyze": {
             "fn": tni.serp_analyze,
-            "description": "Analisa intenção de busca, estratégia de conteúdo e oportunidades SEO para uma keyword.",
+            "description": "Analisa intenÃ§Ã£o de busca, estratÃ©gia de conteÃºdo e oportunidades SEO para uma keyword.",
             "inputSchema": {"type": "object", "properties": {
                 "keyword": {"type": "string"},
                 "intent":  {"type": "string", "default": "auto"},
@@ -877,7 +911,7 @@ if _EXTRA_TOOLS:
         },
         "content_gap_finder": {
             "fn": tni.content_gap_finder,
-            "description": "Encontra lacunas de conteúdo inexploradas no nicho — oportunidades de SEO e autoridade que os líderes ignoram.",
+            "description": "Encontra lacunas de conteÃºdo inexploradas no nicho â€” oportunidades de SEO e autoridade que os lÃ­deres ignoram.",
             "inputSchema": {"type": "object", "properties": {
                 "niche":       {"type": "string"},
                 "your_topics": {"type": "array", "items": {"type": "string"}, "default": []},
@@ -885,7 +919,7 @@ if _EXTRA_TOOLS:
         },
         "niche_vocabulary": {
             "fn": tni.niche_vocabulary,
-            "description": "Extrai vocabulário, jargões, metáforas e frases-chave do nicho para copy que soa como insider.",
+            "description": "Extrai vocabulÃ¡rio, jargÃµes, metÃ¡foras e frases-chave do nicho para copy que soa como insider.",
             "inputSchema": {"type": "object", "properties": {
                 "niche":         {"type": "string"},
                 "output_format": {"type": "string", "default": "completo",
@@ -894,7 +928,7 @@ if _EXTRA_TOOLS:
         },
         "trust_signals_audit": {
             "fn": tni.trust_signals_audit,
-            "description": "Mapeia todos os sinais de confiança usados pelos líderes do nicho com score de impacto na conversão.",
+            "description": "Mapeia todos os sinais de confianÃ§a usados pelos lÃ­deres do nicho com score de impacto na conversÃ£o.",
             "inputSchema": {"type": "object", "properties": {
                 "url":   {"type": "string", "default": ""},
                 "niche": {"type": "string", "default": ""},
@@ -902,7 +936,7 @@ if _EXTRA_TOOLS:
         },
         "pricing_intelligence": {
             "fn": tni.pricing_intelligence,
-            "description": "Mapeia modelos, faixas, psicologia de preço e estratégias de conversão do nicho.",
+            "description": "Mapeia modelos, faixas, psicologia de preÃ§o e estratÃ©gias de conversÃ£o do nicho.",
             "inputSchema": {"type": "object", "properties": {
                 "niche":        {"type": "string"},
                 "product_type": {"type": "string", "default": "saas",
@@ -911,10 +945,10 @@ if _EXTRA_TOOLS:
         },
         "winning_headline_patterns": {
             "fn": tni.winning_headline_patterns,
-            "description": "Lista os 20 templates de headline com maior taxa de conversão histórica para o nicho.",
+            "description": "Lista os 20 templates de headline com maior taxa de conversÃ£o histÃ³rica para o nicho.",
             "inputSchema": {"type": "object", "properties": {
                 "niche": {"type": "string"},
-                "goal":  {"type": "string", "default": "conversão"},
+                "goal":  {"type": "string", "default": "conversÃ£o"},
             }, "required": ["niche"]},
         },
     }
@@ -968,7 +1002,7 @@ def handle_request(req: dict) -> dict | None:
         arguments  = params.get("arguments", {})
 
         if tool_name not in TOOLS:
-            return _error_response(req_id, -32601, f"Ferramenta '{tool_name}' não encontrada.")
+            return _error_response(req_id, -32601, f"Ferramenta '{tool_name}' nÃ£o encontrada.")
 
         try:
             log.info("Chamando ferramenta: %s %s", tool_name, list(arguments.keys()))
@@ -994,11 +1028,11 @@ def handle_request(req: dict) -> dict | None:
     if method.startswith("notifications/"):
         return None
 
-    return _error_response(req_id, -32601, f"Método '{method}' não suportado.")
+    return _error_response(req_id, -32601, f"MÃ©todo '{method}' nÃ£o suportado.")
 
 
 def main():
-    log.info("MCP Server iniciado. Aguardando requisições via stdin...")
+    log.info("MCP Server iniciado. Aguardando requisiÃ§Ãµes via stdin...")
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -1016,3 +1050,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

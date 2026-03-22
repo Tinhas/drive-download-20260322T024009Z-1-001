@@ -1,0 +1,25 @@
+model_list:
+  # Groq (Free tier rápido)
+  - model_name: "agentes-llm"
+    litellm_params:
+      model: "groq/llama-3.3-70b-versatile"
+      api_key: "os.environ/GROQ_API_KEY"
+      rpm: 25
+
+  # Gemini Flash (Free tier estável)
+  - model_name: "agentes-llm"
+    litellm_params:
+      model: "gemini/gemini-2.5-flash"
+      api_key: "os.environ/GEMINI_API_KEY"
+      rpm: 10
+
+  # OpenRouter (Fallback Auto router)
+  - model_name: "agentes-llm"
+    litellm_params:
+      model: "openrouter/auto"
+      api_key: "os.environ/OPENROUTER_API_KEY"
+      rpm: 10
+
+router_settings:
+  routing_strategy: usage-based-routing
+  fallbacks: [{"agentes-llm": ["groq/llama-3.3-70b-versatile", "gemini/gemini-2.8-flash", "openrouter/auto"]}]

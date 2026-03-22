@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agentes-24h-stack": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-fetch",
+        "http://localhost:8080/mcp"
+      ]
+    }
+  }
+}

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Orchestrator | Central UI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #09090b;
+            --surface: rgba(24, 24, 27, 0.6);
+            --surface-border: rgba(63, 63, 70, 0.4);
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.3);
+            --green: #10b981;
+            --red: #f43f5e;
+            --purple: #8b5cf6;
+            --text-main: #fafafa;
+            --text-muted: #a1a1aa;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: var(--bg);
+            background-image: radial-gradient(circle at top right, rgba(59,130,246,0.1), transparent 40%),
+                              radial-gradient(circle at bottom left, rgba(139,92,246,0.1), transparent 40%);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Glassmorphism Classes */
+        .glass {
+            background: var(--surface);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+        }
+
+        /* Header */
+        header {
+            padding: 24px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--surface-border);
+            background: rgba(9, 9, 11, 0.8);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--green);
+            padding: 6px 16px;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            animation: pulse 2s infinite;
+        }
+
+        .status-badge::before {
+            content: '';
+            display: block;
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--green);
+        }
+
+        /* Layout */
+        .dashboard {
+            padding: 40px;
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 24px;
+            flex: 1;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard { grid-template-columns: 1fr; }
+        }
+
+        .main-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        /* Cards */
+        .card {
+            padding: 24px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Token Ring Chart (CSS Only) */
+        .token-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+        }
+
+        .token-item {
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            border: 1px solid transparent;
+             переход: all 0.3s ease;
+        }
+
+        .token-item:hover {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .token-name {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .token-value {
+            font-size: 1.75rem;
+            font-weight: 800;
+        }
+
+        .token-value.safe { color: var(--green); }
+        .token-value.warn { color: #facc15; }
+        .token-value.danger { color: var(--red); }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 999px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 999px;
+            transition: width 1s ease-in-out;
+        }
+
+        /* Logs Panel */
+        .terminal {
+            background: #010409;
+            border-radius: 12px;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid var(--surface-border);
+            color: #e6edf3;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        .log-line { margin-bottom: 8px; line-height: 1.5; }
+        .log-time { color: var(--text-muted); margin-right: 8px; }
+        .log-error { color: var(--red); }
+        .log-success { color: var(--green); }
+        .log-info { color: var(--accent); }
+
+        /* Priorities Timeline */
+        .timeline {
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 5px;
+            bottom: 5px;
+            width: 2px;
+            background: var(--surface-border);
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 24px;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -20px;
+            top: 4px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--surface-border);
+            border: 2px solid var(--surface);
+        }
+
+        .timeline-item.active::before {
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .timeline-item.done::before {
+            background: var(--green);
+        }
+
+        .timeline-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .timeline-item.active .timeline-title { color: var(--accent); }
+
+        .timeline-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        /* Overrides para scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Antigravity Orchestrator</h1>
+        <div class="status-badge" id="global-status">Conectado (DEV Mode)</div>
+    </header>
+
+    <div class="dashboard">
+        
+        <div class="main-panel">
+            
+            <!-- Token Quotas Overview -->
+            <div class="card glass">
+                <div class="card-header">
+                    <h2 class="card-title">📉 Consumo de Tokens / Cotas de API</h2>
+                </div>
+                <div class="token-grid">
+                    <div class="token-item">
+                        <div class="token-name">🤖 Groq Llama 3</div>
+                        <div class="token-value safe" id="groq-val">12%</div>
+                        <div class="progress-bar"><div class="progress-fill" style="width:12%; background:var(--green)"></div></div>
+                    </div>
+                    <div class="token-item">
+                        <div class="token-name">⚡ Gemini Flash</div>
+                        <div class="token-value warn" id="gemini-val">68%</div>
+                        <div class="progress-bar"><div class="progress-fill" style="width:68%; background:#facc15"></div></div>
+                    </div>
+                    <div class="token-item">
+                        <div class="token-name">🌐 OpenRouter</div>
+                        <div class="token-value safe" id="or-val">4%</div>
+                        <div class="progress-bar"><div class="progress-fill" style="width:4%; background:var(--green)"></div></div>
+                    </div>
+                    <div class="token-item">
+                        <div class="token-name">🖥️ Ollama Local</div>
+                        <div class="token-value safe">∞</div>
+                        <div class="progress-bar"><div class="progress-fill" style="width:100%; background:var(--purple)"></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Orchestrator Terminal Logs -->
+            <div class="card glass">
+                <div class="card-header">
+                    <h2 class="card-title">💻 Logs de Erros & Orchestration</h2>
+                    <span style="font-size: 0.8rem; color: var(--text-muted)">Live Stream</span>
+                </div>
+                <div class="terminal" id="term-logs">
+                    <div class="log-line"><span class="log-time">[11:32:01]</span> <span class="log-info">[SYS]</span> Orchestrator Inicializado no Ambiente DEV.</div>
+                    <div class="log-line"><span class="log-time">[11:32:05]</span> <span class="log-info">[GIT]</span> Repositórios 'mvp' e 'white-label mvp' vinculados.</div>
+                    <div class="log-line"><span class="log-time">[11:35:10]</span> <span class="log-info">[LOOP]</span> Disparando Iteração 1/5 do Sub-Agente...</div>
+                    <div class="log-line"><span class="log-time">[11:36:20]</span> <span class="log-error">[ERR]</span> Pyre Strict Error no tools_delegation.py -> Auto-corrigido.</div>
+                    <div class="log-line"><span class="log-time">[11:39:40]</span> <span class="log-success">[OK]</span> MCPs instalados: Sequential Thinking, Brave Search, Github.</div>
+                    <div class="log-line"><span class="log-time">[11:41:00]</span> <span class="log-info">[QA]</span> PyTest iniciado pelo Claude Code... Processando.</div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="side-panel">
+            
+            <!-- Próximos Passos (Priorities Pipeline) -->
+            <div class="card glass">
+                <div class="card-header">
+                    <h2 class="card-title">🎯 Próximos Passos / Prioridades</h2>
+                </div>
+                <div class="timeline">
+                    <div class="timeline-item done">
+                        <div class="timeline-title">Infra & Autonomia</div>
+                        <div class="timeline-desc">Docker DEV Profile UP & MCPs instalados e configurados.</div>
+                    </div>
+                    <div class="timeline-item active">
+                        <div class="timeline-title">Iteração 1: Q&A Local</div>
+                        <div class="timeline-desc">Agente subordinado gerando bateria de testes no rep white-label mvp e isolando bugs iniciais.</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-title">Iteração 2-3: Refatoração TDD</div>
+                        <div class="timeline-desc">Aplicar arquitetura escalável e refatorar views HTML baseado nos erros mapeados.</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-title">Iteração 4-5: Otimização UI</div>
+                        <div class="timeline-desc">Responsividade e melhorias de UI/UX injetados no master loop; commits finais.</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-title">Aprovação do Usuário</div>
+                        <div class="timeline-desc">Pausar ambiente DEV e mergear `docker-compose.yml` final de PROD.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Metrics -->
+            <div class="card glass" style="flex:1">
+                <div class="card-header">
+                    <h2 class="card-title">🧠 Carga Cognitiva</h2>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom: 8px">
+                    <span style="font-size:0.875rem">Uso de RAM (Workers)</span>
+                    <span style="font-weight:600; color:var(--accent)">42%</span>
+                </div>
+                <div class="progress-bar" style="margin-bottom: 24px"><div class="progress-fill" style="width:42%; background:var(--accent)"></div></div>
+                
+                <div style="display:flex; justify-content:space-between; margin-bottom: 8px">
+                    <span style="font-size:0.875rem">Acesso SQLite Memory</span>
+                    <span style="font-weight:600; color:var(--purple)">Ativo</span>
+                </div>
+                
+                <div style="margin-top: 32px">
+                    <button style="width: 100%; background: rgba(59,130,246,0.1); border: 1px solid var(--accent); color: var(--accent); padding: 12px; border-radius: 8px; font-weight: 600; cursor:pointer" onclick="window.location.reload()">
+                        🔄 Atualizar Dashboard
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Script Simulação para UI dinâmica -->
+    <script>
+        // Simulador de pulso nos logs para efeito WOW UX
+        const terminal = document.getElementById('term-logs');
+        const logs = [
+            "[INFO] Acessando endpoint local Ollama 11434...",
+            "[SYS] Alocando Sequential Thinking para nova tarefa...",
+            "[QA] Test_serve.py (Pass: 4, Fail: 0) - OK",
+            "[GIT] Commit 'feat(auto-improve): Q&A updates' gravado.",
+            "[INFO] Preparando Iteração 2..."
+        ];
+        
+        let counter = 0;
+        setInterval(() => {
+            if (counter < logs.length) {
+                const div = document.createElement('div');
+                div.className = 'log-line';
+                const d = new Date();
+                const time = `${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}`;
+                
+                // Colorize
+                let clz = 'log-info';
+                if(logs[counter].includes('[QA]')) clz = 'log-success';
+                
+                div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${clz}">${logs[counter]}</span>`;
+                terminal.appendChild(div);
+                terminal.scrollTop = terminal.scrollHeight;
+                counter++;
+            }
+        }, 3500);
+    </script>
+</body>
+</html>
