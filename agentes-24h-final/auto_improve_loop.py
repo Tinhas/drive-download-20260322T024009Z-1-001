@@ -7,8 +7,8 @@ max_loops = 5
 
 def run_cmd(cmd_list: list[str], **kwargs):
     if os.name == 'nt' and cmd_list[0] == "npx":
-        return subprocess.run(["npx.cmd"] + cmd_list[1:], **kwargs)
-    return subprocess.run(cmd_list, **kwargs)
+        return subprocess.run(["npx.cmd"] + cmd_list[1:], **kwargs)  # type: ignore
+    return subprocess.run(cmd_list, **kwargs)  # type: ignore
 
 print("=====================================================")
 print("🤖 Cérebro Mestre: Auto-Aprimoramento do White-Label 🤖")
